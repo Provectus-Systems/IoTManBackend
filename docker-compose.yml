@@ -48,7 +48,7 @@ services:
       container_name: iotman-webui
       restart: always
       ports:
-        - "8080:8080"  # Exposing NiceGUI on 8080
+        - "3000:3000"  # Exposing NiceGUI on 3000
       depends_on:
         - iotman-backend
       environment:
