@@ -1,23 +1,29 @@
 import os
 import time
 from fastapi import FastAPI, HTTPException
-from sqlmodel import Session, create_engine, SQLModel, select
-from typing import List
+from fastapi.params import Depends
+from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.future import select
 from datetime import datetime
 from contextlib import asynccontextmanager
+import asyncio
 
 from models import BatteryData
+from schemas import BatteryDataCreate, BatteryDataResponse
 
 # Environment Variables
-DB_HOST = os.environ.get("DB_HOST", "localhost")
-DB_NAME = os.environ.get("POSTGRES_DB", "iot_db")
-DB_USER = os.environ.get("POSTGRES_USER", "myuser")
-DB_PASS = os.environ.get("POSTGRES_PASSWORD", "mypassword")
+DB_HOST = os.environ.get("DB_HOST")
+DB_NAME = os.environ.get("POSTGRES_DB")
+DB_USER = os.environ.get("POSTGRES_USER")
+DB_PASS = os.environ.get("POSTGRES_PASSWORD")
 
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}"
+# Use async PostgreSQL URL format
+DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}"
 
-# Create the engine
-engine = create_engine(DATABASE_URL, echo=False)
+# Create async engine
+engine = create_async_engine(DATABASE_URL, echo=False)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,8 +34,9 @@ async def lifespan(app: FastAPI):
     
     while retry_count < max_retries:
         try:
-            # Try to create tables
-            SQLModel.metadata.create_all(engine)
+            # Try to create tables asynchronously
+            async with engine.begin() as conn:
+                await conn.run_sync(SQLModel.metadata.create_all)
             print("Successfully connected to the database")
             break
         except Exception as e:
@@ -37,7 +44,7 @@ async def lifespan(app: FastAPI):
             wait_time = 2 ** retry_count  # Exponential backoff
             print(f"Database connection attempt {retry_count} failed. Retrying in {wait_time} seconds...")
             print(f"Error: {e}")
-            time.sleep(wait_time)
+            await asyncio.sleep(wait_time)
             
             if retry_count == max_retries:
                 print("Maximum retries reached. Could not connect to database.")
@@ -51,38 +58,58 @@ app = FastAPI(
     description="API for managing IoT battery data",
     version="1.0.0",
     docs_url="/",  # This sets the Swagger UI to the root URL
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
-@app.post("/data", response_model=BatteryData)
-def post_data(data: BatteryData):
+async def get_async_session():
+    async with AsyncSession(engine) as session:
+        yield session
+
+@app.post("/data", response_model=list[BatteryDataResponse])
+async def post_data(data: BatteryDataCreate, pg_session: AsyncSession = Depends(get_async_session)):
     """
     POST /data
-    Accepts JSON with battery_id, battery_voltage, and timestamp.
-    Inserts into the database and returns the newly created row.
+    Accepts JSON with battery_id and a list of readings containing battery_voltage and timestamp.
+    Inserts multiple entries into the database and returns the newly created rows.
     """
-    # Ensure the timestamp field has a valid value
-    if data.timestamp is None:
-        data.timestamp = datetime.utcnow()
+    created_records = []
+    
+    for reading in data.readings:
+        # Process timestamp: first convert to UTC, then remove timezone info
+        timestamp = reading.timestamp
+        if timestamp.tzinfo is not None:
+            # Ensure it's in UTC first
+            from datetime import timezone
+            timestamp = timestamp.astimezone(timezone.utc)
+            # Then remove timezone info
+            timestamp = timestamp.replace(tzinfo=None)
+        
+        battery_data = BatteryData(
+            battery_id=data.battery_id,
+            battery_voltage=reading.battery_voltage,
+            timestamp=timestamp
+        )
+        
+        pg_session.add(battery_data)
+        created_records.append(battery_data)
+    
+    await pg_session.commit()
+    
+    # Refresh all created records to get their assigned IDs
+    for record in created_records:
+        await pg_session.refresh(record)
+    
+    return created_records
 
-    with Session(engine) as session:
-        session.add(data)
-        session.commit()
-        session.refresh(data)
-        return data
 
-
-@app.get("/data", response_model=List[BatteryData])
-def get_data():
+@app.get("/data", response_model=list[BatteryDataResponse])
+async def get_data():
     """
     GET /data
     Returns the last 100 entries, sorted by timestamp descending.
     """
-    with Session(engine) as session:
-        statement = (
-            select(BatteryData)
-            .order_by(BatteryData.timestamp.desc())
-            .limit(100)
-        )
-        results = session.exec(statement).all()
-        return results
+    async with AsyncSession(engine) as session:
+        statement = select(BatteryData).order_by(BatteryData.timestamp.desc()).limit(100)
+        result = await session.exec(statement)
+        return result.scalars().all()
