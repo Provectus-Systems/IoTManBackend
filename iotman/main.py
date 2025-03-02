@@ -1,99 +1,61 @@
 import os
-import psycopg2
+from fastapi import FastAPI, HTTPException
+from sqlmodel import Session, create_engine, SQLModel, select
+from typing import List
 from datetime import datetime
-from fastapi import FastAPI, Request, HTTPException
-from typing import Any
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+from models import BatteryData
 
-# Database Connection Setup
+# Environment Variables
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_NAME = os.environ.get("POSTGRES_DB", "iot_db")
 DB_USER = os.environ.get("POSTGRES_USER", "myuser")
 DB_PASS = os.environ.get("POSTGRES_PASSWORD", "mypassword")
 
-def get_db_connection():
-    """
-    Get a psycopg2 connection to the Postgres database.
-    """
-    return psycopg2.connect(
-        host=DB_HOST,
-        database=DB_NAME,
-        user=DB_USER,
-        password=DB_PASS
-    )
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}"
 
-# Create table if not exists on startup
-@app.on_event("startup")
-def startup_event():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    # Use a JSONB column to store entire payload
-    create_table_query = """
-    CREATE TABLE IF NOT EXISTS iot_data (
-        id SERIAL PRIMARY KEY,
-        data JSONB NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-    """
-    cursor.execute(create_table_query)
-    conn.commit()
-    cursor.close()
-    conn.close()
+# Create the engine
+engine = create_engine(DATABASE_URL, echo=False)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Code to run on startup
+    SQLModel.metadata.create_all(engine)
+    yield
+    # Code to run on shutdown (if any)
 
-@app.post("/data")
-async def post_data(request: Request):
-    """
-    POST endpoint to accept IoT data in JSON format 
-    and store it in Postgres.
-    """
-    try:
-        payload = await request.json()
-    except:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+app = FastAPI(lifespan=lifespan)
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    insert_query = """
-        INSERT INTO iot_data (data) 
-        VALUES (%s)
-        RETURNING id, created_at
+@app.post("/data", response_model=BatteryData)
+def post_data(data: BatteryData):
     """
-    cursor.execute(insert_query, [payload])
-    row = cursor.fetchone()
-    conn.commit()
-    cursor.close()
-    conn.close()
+    POST /data
+    Accepts JSON with battery_id, battery_voltage, and timestamp.
+    Inserts into the database and returns the newly created row.
+    """
+    # Ensure the timestamp field has a valid value
+    if data.timestamp is None:
+        data.timestamp = datetime.utcnow()
 
-    return {"message": "Data inserted successfully", "id": row[0], "created_at": row[1]}
+    with Session(engine) as session:
+        session.add(data)
+        session.commit()
+        session.refresh(data)
+        return data
 
 
-@app.get("/data")
-async def get_data():
+@app.get("/data", response_model=List[BatteryData])
+def get_data():
     """
-    GET endpoint to retrieve the last 100 data points
-    from Postgres, sorted by creation time descending.
+    GET /data
+    Returns the last 100 entries, sorted by timestamp descending.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    select_query = """
-        SELECT id, data, created_at 
-        FROM iot_data
-        ORDER BY created_at DESC 
-        LIMIT 100
-    """
-    cursor.execute(select_query)
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
-
-    # Format the rows into a list of dicts
-    results = []
-    for row in rows:
-        results.append({
-            "id": row[0],
-            "data": row[1],
-            "created_at": row[2].isoformat()
-        })
-    return {"results": results}
+    with Session(engine) as session:
+        statement = (
+            select(BatteryData)
+            .order_by(BatteryData.timestamp.desc())
+            .limit(100)
+        )
+        results = session.exec(statement).all()
+        return results
