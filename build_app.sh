@@ -9,15 +9,15 @@ ENV_FILE="$APP_DIR/.env"
 
 echo "Deploying FastAPI IoT Application..."
 
-# Clone the repository if it doesn't exist
-if [ ! -d "$APP_DIR" ]; then
-    echo "Cloning repository..."
-    git clone $REPO_URL $APP_DIR
-else
-    echo "Repository exists, pulling latest changes..."
-    cd $APP_DIR
-    git pull origin main
-fi
+# # Clone the repository if it doesn't exist
+# if [ ! -d "$APP_DIR" ]; then
+#     echo "Cloning repository..."
+#     git clone $REPO_URL $APP_DIR
+# else
+#     echo "Repository exists, pulling latest changes..."
+#     cd $APP_DIR
+#     git pull origin main
+# fi
 
 # Ensure we're in the application directory
 cd $APP_DIR
