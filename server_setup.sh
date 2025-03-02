@@ -7,10 +7,18 @@ echo "Updating system..."
 sudo yum update -y
 
 echo "Installing Docker..."
-sudo amazon-linux-extras enable docker
-sudo yum install docker -y
-sudo systemctl start docker
-sudo systemctl enable docker
+# Check Amazon Linux version
+if grep -q "Amazon Linux 2" /etc/os-release; then
+    # Amazon Linux 2 approach
+    sudo amazon-linux-extras install docker -y
+else
+    # Amazon Linux 2023 approach
+    sudo yum install docker -y
+fi
+
+# Use full service name for better compatibility
+sudo systemctl start docker.service
+sudo systemctl enable docker.service
 
 echo "Adding user to Docker group..."
 sudo usermod -aG docker ec2-user
@@ -19,8 +27,16 @@ echo "Installing Git..."
 sudo yum install git -y
 
 echo "Installing Docker Compose..."
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
+# Try package manager first, fall back to manual download if not available
+if ! sudo yum install docker-compose -y; then
+    echo "Docker Compose not found in repositories, installing manually..."
+    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    sudo chmod +x /usr/local/bin/docker-compose
+fi
+
+# Create directory if it doesn't exist
+echo "Creating application directory..."
+mkdir -p /home/ec2-user/fastapi-iot
 
 echo "Setting up Docker Compose to run on startup..."
 sudo tee /etc/systemd/system/docker-compose-app.service > /dev/null <<EOL
