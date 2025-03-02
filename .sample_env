@@ -1,0 +1,5 @@
+# sample .env file, copy to .env and fill in your own values
+
+POSTGRES_USER=<pg user>
+POSTGRES_PASSWORD=<pg password>
+POSTGRES_DB=<pg db name>
