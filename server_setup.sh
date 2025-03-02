@@ -7,14 +7,7 @@ echo "Updating system..."
 sudo yum update -y
 
 echo "Installing Docker..."
-# Check Amazon Linux version
-if grep -q "Amazon Linux 2" /etc/os-release; then
-    # Amazon Linux 2 approach
-    sudo amazon-linux-extras install docker -y
-else
-    # Amazon Linux 2023 approach
-    sudo yum install docker -y
-fi
+sudo yum install docker -y
 
 # Use full service name for better compatibility
 sudo systemctl start docker.service
