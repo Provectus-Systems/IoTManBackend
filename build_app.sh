@@ -4,7 +4,7 @@
 set -e
 
 REPO_URL="https://github.com/amloren1/IoTMan.git"
-APP_DIR="/home/ec2-user/fastapi-iot"
+APP_DIR="/home/ec2-user/IoTMan"
 ENV_FILE="$APP_DIR/.env"
 
 echo "Deploying FastAPI IoT Application..."
