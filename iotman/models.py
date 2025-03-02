@@ -1,10 +1,10 @@
-from typing import Optional
 from datetime import datetime
 from sqlmodel import SQLModel, Field
 
 class BatteryData(SQLModel, table=True):
     __tablename__ = "battery_data"
-    id: Optional[int] = Field(default=None, primary_key=True)
+    idx: int = Field(primary_key=True, sa_column_kwargs={"autoincrement": True})
     battery_id: str
-    battery_voltage: float
+    voltage: float
     timestamp: datetime
+

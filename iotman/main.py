@@ -1,17 +1,17 @@
 import os
 import time
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.params import Depends
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.future import select
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 import asyncio
 
 from models import BatteryData
-from schemas import BatteryDataCreate, BatteryDataResponse
+from schemas import BatteryDataCreate, BatteryDataResponse, BatteryDataResponseAll
 
 # Environment Variables
 DB_HOST = os.environ.get("DB_HOST")
@@ -80,14 +80,13 @@ async def post_data(data: BatteryDataCreate, pg_session: AsyncSession = Depends(
         timestamp = reading.timestamp
         if timestamp.tzinfo is not None:
             # Ensure it's in UTC first
-            from datetime import timezone
             timestamp = timestamp.astimezone(timezone.utc)
             # Then remove timezone info
             timestamp = timestamp.replace(tzinfo=None)
         
         battery_data = BatteryData(
             battery_id=data.battery_id,
-            battery_voltage=reading.battery_voltage,
+            voltage=reading.voltage,
             timestamp=timestamp
         )
         
@@ -103,13 +102,42 @@ async def post_data(data: BatteryDataCreate, pg_session: AsyncSession = Depends(
     return created_records
 
 
-@app.get("/data", response_model=list[BatteryDataResponse])
-async def get_data():
+@app.get("/data", response_model=BatteryDataResponseAll)
+async def get_data(
+    start_time: datetime = Query(None, description="Start time for filtering data (UTC)"),
+    end_time: datetime = Query(None, description="End time for filtering data (UTC)"),
+    pg_session: AsyncSession = Depends(get_async_session)
+):
     """
     GET /data
     Returns the last 100 entries, sorted by timestamp descending.
+    Optional query parameters:
+    - start_time: Filter data after this time (UTC)
+    - end_time: Filter data before this time (UTC)
     """
-    async with AsyncSession(engine) as session:
-        statement = select(BatteryData).order_by(BatteryData.timestamp.desc()).limit(100)
-        result = await session.exec(statement)
-        return result.scalars().all()
+    # Start building the query
+    query = select(BatteryData)
+    
+    # Add time filters if provided
+    if start_time:
+        # Ensure start_time is in UTC and remove timezone info
+        if start_time.tzinfo is not None:
+            start_time = start_time.astimezone(timezone.utc)
+        start_time = start_time.replace(tzinfo=None)
+        query = query.where(BatteryData.timestamp >= start_time)
+    
+    if end_time:
+        # Ensure end_time is in UTC and remove timezone info
+        if end_time.tzinfo is not None:
+            end_time = end_time.astimezone(timezone.utc)
+        end_time = end_time.replace(tzinfo=None)
+        query = query.where(BatteryData.timestamp <= end_time)
+    
+    # Apply sorting and limit
+    query = query.order_by(BatteryData.timestamp.desc())
+    
+    # Execute query
+    result = await pg_session.exec(query)
+    data = result.scalars().all()
+    
+    return {"items": data, "total_items": len(data)}

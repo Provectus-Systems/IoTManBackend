@@ -1,11 +1,11 @@
 from datetime import datetime
 from typing import List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class BatteryReading(BaseModel):
     """Schema for a single battery voltage reading with timestamp"""
-    battery_voltage: float = Field(..., description="Battery voltage reading in volts")
+    voltage: float = Field(..., description="Battery voltage reading in volts")
     timestamp: datetime = Field(..., description="Timestamp of the battery reading")
 
 
@@ -17,10 +17,14 @@ class BatteryDataCreate(BaseModel):
 
 class BatteryDataResponse(BaseModel):
     """Schema for battery data response"""
-    id: int
     battery_id: str
-    battery_voltage: float
+    voltage: float
     timestamp: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        from_attributes = True
+
+class BatteryDataResponseAll(BaseModel):
+    """Schema for all battery data response"""
+    items: list[BatteryDataResponse]
+    total_items: int
