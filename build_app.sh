@@ -3,28 +3,40 @@
 # Exit on error
 set -e
 
-REPO_URL="https://github.com/amloren1/IoTMan.git"
-APP_DIR="/home/ec2-user/IoTMan"
-ENV_FILE="$APP_DIR/.env"
+BACKEND_REPO_URL="https://github.com/Provectus-Systems/IoTManBackend.git"
+WEBUI_REPO_URL="https://github.com/Provectus-Systems/IoTManWebUI.git"
+BACKEND_APP_DIR="/home/ec2-user/IoTManBackend"
+WEBUI_APP_DIR="/home/ec2-user/IoTManWebUI"
+BACKEND_ENV_FILE="$BACKEND_APP_DIR/.env"
+WEBUI_ENV_FILE="$WEBUI_APP_DIR/.env"
 
 echo "Deploying FastAPI IoT Application..."
 
-# # Clone the repository if it doesn't exist
-# if [ ! -d "$APP_DIR" ]; then
-#     echo "Cloning repository..."
-#     git clone $REPO_URL $APP_DIR
-# else
-#     echo "Repository exists, pulling latest changes..."
-#     cd $APP_DIR
-#     git pull origin main
-# fi
+# Clone the repository if it doesn't exist
+if [ ! -d "$BACKEND_APP_DIR" ]; then
+    echo "Cloning repository..."
+    git clone $BACKEND_REPO_URL $BACKEND_APP_DIR
+else
+    echo "Repository exists, pulling latest changes..."
+    cd $BACKEND_APP_DIR
+    git pull origin main
+fi
+
+if [ ! -d "$WEBUI_APP_DIR" ]; then
+    echo "Cloning repository..."
+    git clone $WEBUI_REPO_URL $WEBUI_APP_DIR
+else
+    echo "Repository exists, pulling latest changes..."
+    cd $WEBUI_APP_DIR
+    git pull origin main
+fi
 
 # Ensure we're in the application directory
-cd $APP_DIR
+cd $BACKEND_APP_DIR
 
 # Check if .env file exists, error out if it doesn't
-if [ ! -f "$ENV_FILE" ]; then
-    echo "ERROR: .env file does not exist at $ENV_FILE"
+if [ ! -f "$BACKEND_ENV_FILE" ]; then
+    echo "ERROR: .env file does not exist at $BACKEND_ENV_FILE"
     echo "Please create the .env file with required environment variables before deploying."
     exit 1
 else
